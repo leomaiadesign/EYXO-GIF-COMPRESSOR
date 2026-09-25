@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EYXO GIF Compressor</title>
+    <style>
+        :root {
+            --eyxo-bg: #000000;
+            --eyxo-surface: #0A0A0A;
+            --eyxo-surface-hover: #141414;
+            --eyxo-border: #1F1F1F;
+            --eyxo-text: #FFFFFF;
+            --eyxo-text-muted: #8F8F8F;
+            --eyxo-blue: #0000FF;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--eyxo-bg);
+            color: var(--eyxo-text);
+            font-family: 'Moderat', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px 24px;
+        }
+
+        .mono-font {
+            font-family: 'Moderat Mono', 'Courier New', Courier, monospace;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background-color: var(--eyxo-surface);
+            border: 1px solid var(--eyxo-border);
+            border-radius: 12px;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: var(--eyxo-text-muted);
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 700;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--eyxo-text-muted);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-drop {
+            border: 1px solid var(--eyxo-border);
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: var(--eyxo-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-drop:hover {
+            border-color: var(--eyxo-text-muted);
+        }
+
+        .file-drop.active {
+            border-color: var(--eyxo-blue);
+            background-color: rgba(0, 0, 255, 0.05);
+        }
+
+        #file-name {
+            word-break: break-all;
+            width: 100%;
+        }
+
+        .preview-img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 4px;
+            border: 1px solid var(--eyxo-border);
+            display: none;
+            object-fit: contain;
+            background-color: var(--eyxo-bg);
+        }
+
+        .original-size-badge {
+            display: none;
+            font-size: 13px;
+            color: var(--eyxo-text);
+            background-color: var(--eyxo-border);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        input[type="number"] {
+            background-color: var(--eyxo-bg);
+            color: var(--eyxo-text);
+            border: 1px solid var(--eyxo-border);
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 16px;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="number"]:focus {
+            border-color: var(--eyxo-blue);
+        }
+
+        button {
+            background-color: var(--eyxo-blue);
+            color: #FFFFFF;
+            font-family: inherit;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 1px;
+            border: none;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+        }
+
+        button:hover {
+            background-color: #0000D1;
+        }
+
+        button:disabled {
+            background-color: #333;
+            color: #777;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--eyxo-border);
+            border-top: 3px solid var(--eyxo-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #result {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 8px;
+            padding-top: 24px;
+            border-top: 1px solid var(--eyxo-border);
+        }
+
+        .meta-box {
+            display: flex;
+            justify-content: space-between;
+            background-color: var(--eyxo-bg);
+            border: 1px solid var(--eyxo-border);
+            padding: 12px 16px;
+            border-radius: 8px;
+        }
+
+        .meta-label {
+            color: var(--eyxo-text-muted);
+            font-size: 14px;
+        }
+
+        .meta-value {
+            color: var(--eyxo-text);
+            font-weight: 700;
+        }
+
+        .download-btn {
+            background-color: transparent;
+            border: 1px solid var(--eyxo-border);
+            color: var(--eyxo-text);
+            text-decoration: none;
+            display: block;
+            text-align: center;
+            padding: 16px;
+            border-radius: 8px;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .download-btn:hover {
+            background-color: var(--eyxo-surface-hover);
+            border-color: var(--eyxo-text-muted);
+        }
+
+        .version-tag {
+            text-align: center;
+            margin-top: 24px;
+            color: var(--eyxo-text-muted);
+            font-size: 12px;
+            opacity: 0.5;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div>
+            <h1>GIF Compressor</h1>
+            <p>Otimize GIFs animados para banners e campanhas limitando seu peso em KB sem perder resolução.</p>
+        </div>
+
+        <div class="input-group">
+            <label>1. Selecione o GIF</label>
+            <label class="file-drop" id="drop-zone">
+                <img id="preview-original" class="preview-img" alt="Preview Original">
+                <span id="file-name" class="mono-font" style="color: var(--eyxo-text-muted);">Clique ou arraste o arquivo aqui</span>
+                <span id="original-size-badge" class="mono-font original-size-badge"></span>
+                <input type="file" id="file-input" accept="image/gif">
+            </label>
+        </div>
+
+        <div class="input-group">
+            <label>2. Peso Alvo (KB)</label>
+            <input type="number" id="target-kb" value="1000" class="mono-font" placeholder="Ex: 2500">
+        </div>
+
+        <div class="input-group">
+            <label>3. Modo de Resolução / Extremo</label>
+            <select id="compression-mode" class="mono-font" style="background-color: var(--eyxo-bg); color: var(--eyxo-text); border: 1px solid var(--eyxo-border); border-radius: 8px; padding: 16px; font-size: 14px; outline: none;">
+                <option value="scale_100">Escala 100% (Apenas Cores - Pode falhar no KB)</option>
+                <option value="scale_80">Escala 80% (Permitir redução de imagem)</option>
+                <option value="scale_50">Escala 50% (Permitir redução agressiva)</option>
+                <option value="drop_fps" selected>Reduzir FPS (Mantém cores e resolução 100%) ✨ Magia</option>
+            </select>
+        </div>
+
+        <button id="compress-btn" disabled>
+            <span>Comprimir GIF</span>
+            <div class="spinner" id="spinner"></div>
+        </button>
+
+        <div id="result">
+            <label>3. Resultado Final</label>
+            <img id="preview-final" class="preview-img" alt="Preview Final" style="margin-bottom: 8px;">
+
+            <div class="meta-box">
+                <span class="meta-label">Original:</span>
+                <span class="meta-value mono-font" id="meta-original">-- KB</span>
+            </div>
+            <div class="meta-box">
+                <span class="meta-label">Final:</span>
+                <span class="meta-value mono-font" id="meta-final">-- KB</span>
+            </div>
+            <div class="meta-box">
+                <span class="meta-label">Método:</span>
+                <span class="meta-value mono-font" id="meta-method" style="font-size: 12px;">--</span>
+            </div>
+
+            <a href="#" class="download-btn" id="download-link">BAIXAR ARQUIVO</a>
+        </div>
+    </div>
+
+    <div class="version-tag mono-font">v1.3.0</div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const fileNameDisplay = document.getElementById('file-name');
+        const originalSizeBadge = document.getElementById('original-size-badge');
+        const previewOriginal = document.getElementById('preview-original');
+        
+        const compressBtn = document.getElementById('compress-btn');
+        const spinner = document.getElementById('spinner');
+        const targetKbInput = document.getElementById('target-kb');
+        
+        const resultDiv = document.getElementById('result');
+        const previewFinal = document.getElementById('preview-final');
+        
+        let selectedFile = null;
+
+        // Drag and drop handlers
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('active'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('active'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            handleFiles(files);
+        });
+
+        fileInput.addEventListener('change', function(e) {
+            handleFiles(this.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length > 0 && files[0].type === 'image/gif') {
+                selectedFile = files[0];
+                fileNameDisplay.textContent = selectedFile.name;
+                fileNameDisplay.style.color = 'var(--eyxo-text)';
+                
+                // Exibir preview
+                const objectUrl = URL.createObjectURL(selectedFile);
+                previewOriginal.src = objectUrl;
+                previewOriginal.style.display = 'block';
+
+                // Exibir tamanho original imediato
+                const sizeKb = (selectedFile.size / 1024).toFixed(1);
+                originalSizeBadge.textContent = sizeKb + ' KB';
+                originalSizeBadge.style.display = 'inline-block';
+
+                compressBtn.disabled = false;
+                resultDiv.style.display = 'none';
+            } else {
+                alert('Por favor, selecione um arquivo GIF.');
+            }
+        }
+
+        compressBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const targetKb = targetKbInput.value;
+            if (!targetKb || targetKb <= 0) {
+                alert('Por favor, defina um limite em KB válido.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('target_kb', targetKb);
+            formData.append('compression_mode', document.getElementById('compression-mode').value);
+
+            // UI Loading state
+            compressBtn.disabled = true;
+            compressBtn.querySelector('span').textContent = 'Processando...';
+            spinner.style.display = 'block';
+            resultDiv.style.display = 'none';
+            previewFinal.style.display = 'none';
+
+            try {
+                const response = await fetch('/compress', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    document.getElementById('meta-original').textContent = data.original_kb.toFixed(1) + ' KB';
+                    document.getElementById('meta-final').textContent = data.final_kb.toFixed(1) + ' KB';
+                    
+                    if (data.warning) {
+                        document.getElementById('meta-final').style.color = '#FFA500';
+                        alert('Aviso: O limite de KB exigido era muito restrito para manter a resolução sem destruir a imagem. O algoritmo retornou o menor tamanho possível preservando a qualidade (Hard Cap atingido).');
+                    } else if(data.final_kb <= targetKb) {
+                        document.getElementById('meta-final').style.color = '#00FF00'; // Green se ok
+                    } else {
+                        document.getElementById('meta-final').style.color = '#FFA500'; // Orange se falhou na busca
+                    }
+                    
+                    document.getElementById('meta-method').textContent = data.method;
+                    document.getElementById('download-link').href = data.download_url;
+                    
+                    // Mostrar preview do resultado final
+                    // Adiciona um timestamp na query string para evitar cache do navegador na mesma imagem
+                    previewFinal.src = data.download_url + "?t=" + new Date().getTime();
+                    previewFinal.style.display = 'block';
+                    
+                    resultDiv.style.display = 'flex';
+                } else {
+                    alert('Erro na compressão: ' + (data.error || 'Erro desconhecido.'));
+                }
+            } catch (err) {
+                alert('Erro na conexão com o servidor.');
+            } finally {
+                compressBtn.disabled = false;
+                compressBtn.querySelector('span').textContent = 'Comprimir Novamente';
+                spinner.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

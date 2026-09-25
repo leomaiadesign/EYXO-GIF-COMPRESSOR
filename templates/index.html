@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIF Compressor - EYXO</title>
+    <link rel="icon" type="image/png" href="/static/eyxo_favicon.png">
+    <style>
+        :root {
+            --eyxo-bg: #0A0A0A;
+            --eyxo-surface: #121212;
+            --eyxo-border: #2A2A2A;
+            --eyxo-text: #FFFFFF;
+            --eyxo-text-muted: #888888;
+            --eyxo-blue: #0000FF;
+            --eyxo-blue-hover: #0000CC;
+        }
+
+        body {
+            font-family: 'Moderat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--eyxo-bg);
+            color: var(--eyxo-text);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .mono-font { font-family: 'Moderat Mono', 'Courier New', Courier, monospace; }
+
+        .sidebar {
+            width: 360px;
+            background-color: var(--eyxo-surface);
+            border-right: 1px solid var(--eyxo-border);
+            padding: 40px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            z-index: 10;
+        }
+
+        .main-content {
+            flex: 1;
+            position: relative;
+            padding: 40px;
+            background-image: radial-gradient(var(--eyxo-border) 1px, transparent 1px);
+            background-size: 20px 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            min-width: 0;
+            scroll-snap-type: y mandatory;
+            scroll-padding-top: 40px;
+            scroll-padding-bottom: 40px;
+            scroll-behavior: smooth;
+        }
+
+        .header h1 { font-size: 24px; font-weight: 700; margin: 0 0 8px 0; color: var(--eyxo-text); }
+        .header p { color: var(--eyxo-text-muted); font-size: 14px; margin: 0; line-height: 1.5; }
+
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        .input-group label { font-size: 12px; font-weight: 600; color: var(--eyxo-text-muted); text-transform: uppercase; }
+
+        .file-drop {
+            border: 2px dashed var(--eyxo-border);
+            border-radius: 8px;
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            background-color: var(--eyxo-bg);
+            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            transition: all 0.2s;
+        }
+        .file-drop:hover { border-color: var(--eyxo-blue); }
+        .file-drop svg { transition: stroke 0.2s; }
+        .file-drop:hover svg { stroke: var(--eyxo-blue) !important; }
+
+        .file-drop input[type="file"] { display: none; }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 0;
+            
+        }
+        .file-list::-webkit-scrollbar { width: 4px; }
+        .file-list::-webkit-scrollbar-thumb { background: var(--eyxo-border); border-radius: 4px; }
+
+        .file-item {
+            background-color: var(--eyxo-bg);
+            border: 1px solid var(--eyxo-border);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .file-item-header {
+            display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+        }
+        .file-name-text {
+            font-size: 13px; font-weight: 600; word-break: break-all; line-height: 1.4; flex: 1;
+        }
+        .file-status { 
+            font-size: 11px; padding: 4px 8px; border-radius: 4px; background: var(--eyxo-border); 
+            text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; white-space: nowrap;
+        }
+        .file-status.done { background: #00FF00; color: #000; }
+        
+        .file-item-controls { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+        .file-item-controls input {
+            background: var(--eyxo-surface); border: 1px solid var(--eyxo-border); color: #fff;
+            padding: 8px; border-radius: 4px; width: 80px; font-size: 13px; outline: none;
+        }
+        .file-item-controls input:focus { border-color: var(--eyxo-blue); }
+
+        button {
+            background-color: var(--eyxo-blue); color: white; border: none; padding: 16px; border-radius: 8px;
+            font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+            display: flex; align-items: center; justify-content: center; width: 100%; gap: 8px;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { background-color: var(--eyxo-border); color: var(--eyxo-text-muted); cursor: not-allowed; }
+
+        /* Right Panel */
+        .empty-state {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        
+        .previews-container {
+            display: flex;
+            flex-direction: column;
+            /* Removemos o padding-bottom gigante pois cada row terá o tamanho exato da tela */
+        }
+        
+        .preview-row {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            /* Altura EXATA da tela menos o padding do main-content (40px em cima e 40px embaixo) */
+            height: calc(100vh - 80px);
+            margin-bottom: 80px; /* Separação forte entre um item e outro do feed */
+            flex-shrink: 0;
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
+        }
+        
+        .preview-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .preview-row-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--eyxo-text);
+            border-bottom: 1px solid var(--eyxo-border);
+            padding-bottom: 8px;
+            word-break: break-all;
+            flex-shrink: 0;
+        }
+
+        .preview-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+            flex: 1; /* Ocupa o restante do espaço da row */
+            min-height: 0; /* Crucial para o conteúdo interno encolher */
+        }
+        .preview-card {
+            background-color: var(--eyxo-surface); border: 1px solid var(--eyxo-border); border-radius: 12px;
+            padding: 24px; display: flex; flex-direction: column;
+            min-height: 0; /* Crucial para os flex items encolherem */
+        }
+        .preview-card.final {
+            border: 1px dashed var(--eyxo-border);
+        }
+        .preview-card.final.ready {
+            border: 1px dashed var(--eyxo-blue);
+        }
+        .preview-card h3 { margin: 0 0 16px 0; font-size: 13px; color: var(--eyxo-text-muted); text-transform: uppercase; }
+        .preview-card.final h3 { color: var(--eyxo-text-muted); }
+        .preview-card.final.ready h3 { color: var(--eyxo-text); }
+        
+                .preview-img-container {
+            flex: 1; min-height: 0; background-color: #000; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            overflow: hidden; margin-bottom: 16px; padding: 16px;
+        }
+        .preview-img { max-width: 100%; height: auto; height: 100%; object-fit: contain; }
+        
+        .meta-box {
+            display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--eyxo-bg);
+            border: 1px solid var(--eyxo-border); border-radius: 8px; margin-bottom: 8px;
+        }
+        .meta-label { color: var(--eyxo-text-muted); font-size: 13px; }
+        .meta-value { font-size: 13px; font-weight: 600; }
+        
+        .spinner {
+            border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid #fff; border-radius: 50%;
+            width: 14px; height: 14px; animation: spin 1s linear infinite; display: none;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .download-btn {
+            display: block; text-align: center; background-color: var(--eyxo-text); color: var(--eyxo-bg);
+            text-decoration: none; padding: 16px; border-radius: 8px; font-weight: 600; font-size: 14px; margin-top: 8px; text-transform: uppercase;
+        }
+        .download-btn:hover { opacity: 0.9; }
+    
+        .scroll-indicator {
+            position: fixed;
+            bottom: 32px;
+            left: calc(50% + 180px);
+            transform: translateX(-50%);
+            background-color: var(--eyxo-blue);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .scroll-indicator.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-10px);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="header">
+            <img src="/static/eyxo_logo.png" style="width: 80px; margin-bottom: 16px; display: block;" alt="EYXO">
+            <h1>GIF Compressor</h1>
+            <p>Suba seus GIFs e defina o limite de KB individual para cada um.</p>
+        </div>
+
+        <div class="input-group">
+            <label class="file-drop" id="drop-zone">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--eyxo-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span style="color: var(--eyxo-text-muted); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Clique ou arraste GIFs aqui</span>
+                <input type="file" id="file-input" accept="image/gif" multiple>
+            </label>
+        </div>
+
+        <div class="file-list" id="file-list">
+            <!-- Items via JS -->
+        </div>
+
+        <div style="display:flex; flex-direction: column; gap: 8px;">
+            <button id="compress-all-btn" style="display: none;">
+                <span style="text-transform: uppercase; letter-spacing: 1px;">COMPRIMIR</span>
+                <div class="spinner" id="spinner"></div>
+            </button>
+            <button id="download-all-btn" style="display: none; background-color: var(--eyxo-text); color: var(--eyxo-bg); text-transform: uppercase; letter-spacing: 1px;">BAIXAR ZIP</button>
+        </div>
+        
+        <div class="version-tag mono-font" style="font-size: 12px; color: var(--eyxo-text-muted); opacity: 0.5; text-align: center; width: 100%;">v2.5.11</div>
+    </div>
+
+    <div class="main-content" id="main-content">
+        <div class="empty-state" id="empty-state">
+            <img src="/static/eyxo_logo.png" style="width: 80px; margin-bottom: 24px;" alt="EYXO">
+            <p style="color: var(--eyxo-text-muted); font-size: 14px; text-align: center; line-height: 1.6;">
+                Selecione um ou mais arquivos na lateral<br>para iniciar a compressão.
+            </p>
+        </div>
+
+        
+        <div class="scroll-indicator" id="scroll-indicator">
+            ↓ Mais <span id="scroll-count">0</span> <span id="scroll-word">arquivos</span>
+        </div>
+
+        <div class="previews-container" id="previews-container" style="display: none;">
+            <!-- Feeds generated via JS -->
+        </div>
+    </div>
+
+    <script>
+        let filesData = [];
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileListEl = document.getElementById('file-list');
+        const compressAllBtn = document.getElementById('compress-all-btn');
+        const downloadAllBtn = document.getElementById('download-all-btn');
+        const spinner = document.getElementById('spinner');
+
+        
+        const scrollIndicator = document.getElementById('scroll-indicator');
+        const scrollCount = document.getElementById('scroll-count');
+        const scrollWord = document.getElementById('scroll-word');
+        const mainContent = document.getElementById('main-content');
+
+        const emptyState = document.getElementById('empty-state');
+        const previewsContainer = document.getElementById('previews-container');
+        
+        
+        function updateScrollIndicator() {
+            if (filesData.length <= 1) {
+                scrollIndicator.classList.remove('visible');
+                return;
+            }
+            
+            const isScrollable = mainContent.scrollHeight > mainContent.clientHeight;
+            const scrolledToBottom = mainContent.scrollHeight - mainContent.scrollTop - mainContent.clientHeight < 100;
+
+            if (isScrollable && !scrolledToBottom) {
+                const count = filesData.length - 1;
+                scrollCount.textContent = count;
+                scrollWord.textContent = count === 1 ? 'arquivo' : 'arquivos';
+                scrollIndicator.classList.add('visible');
+            } else {
+                scrollIndicator.classList.remove('visible');
+            }
+        }
+
+        mainContent.addEventListener('scroll', updateScrollIndicator);
+        window.addEventListener('resize', updateScrollIndicator);
+
+        // Drag events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, preventDefaults));
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+        ['dragenter', 'dragover'].forEach(e => dropZone.addEventListener(e, () => dropZone.style.borderColor = 'var(--eyxo-blue)'));
+        ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, () => dropZone.style.borderColor = 'var(--eyxo-border)'));
+
+        dropZone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+        fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                if(file.type === 'image/gif') {
+                    const id = 'file_' + Date.now() + Math.random().toString(36).substr(2, 9);
+                    const itemData = {
+                        id, file, targetKb: 1000, status: 'pending',
+                        originalSize: (file.size / 1024).toFixed(1),
+                        objectUrl: URL.createObjectURL(file),
+                        finalUrl: null, finalKb: null, method: null, filename: null
+                    };
+                    filesData.push(itemData);
+                    createPreviewBlock(itemData);
+                }
+            });
+            renderList();
+        }
+
+        function createPreviewBlock(item) {
+            const row = document.createElement('div');
+            row.className = 'preview-row';
+            row.id = `preview-row-${item.id}`;
+            row.innerHTML = `
+                <div class="preview-row-title">${item.file.name}</div>
+                <div class="preview-grid">
+                    <div class="preview-card" id="card-original-${item.id}">
+                        <h3>Original</h3>
+                        <div class="preview-img-container">
+                            <img src="${item.objectUrl}" class="preview-img">
+                        </div>
+                        <div class="meta-box">
+                            <span class="meta-label">Peso Original:</span>
+                            <span class="meta-value mono-font">${item.originalSize} KB</span>
+                        </div>
+                    </div>
+
+                    <div class="preview-card final" id="card-final-${item.id}">
+                        <h3>Resultado Final</h3>
+                        <div class="preview-img-container" id="img-container-final-${item.id}">
+                            <span style="color: var(--eyxo-text-muted); font-size: 13px;" id="placeholder-final-${item.id}">Aguardando compressão...</span>
+                            <img id="img-final-${item.id}" class="preview-img" style="display: none;">
+                        </div>
+                        <div class="meta-box">
+                            <span class="meta-label">Peso Final:</span>
+                            <span class="meta-value mono-font" id="meta-final-${item.id}">-- KB</span>
+                        </div>
+                        <div class="meta-box">
+                            <span class="meta-label">Método:</span>
+                            <span class="meta-value mono-font" id="meta-method-${item.id}" style="font-size: 11px;">--</span>
+                        </div>
+                        <a href="#" class="download-btn" id="download-${item.id}" style="display: none;">BAIXAR ESTE ARQUIVO</a>
+                    </div>
+                </div>
+            `;
+            previewsContainer.appendChild(row);
+        }
+
+        
+        function resetPreviewBlock(id) {
+            const card = document.getElementById(`card-final-${id}`);
+            if(card) {
+                card.classList.remove('ready');
+                document.getElementById(`placeholder-final-${id}`).style.display = 'inline';
+                document.getElementById(`placeholder-final-${id}`).textContent = 'Aguardando compressão...';
+                document.getElementById(`img-final-${id}`).style.display = 'none';
+                document.getElementById(`meta-final-${id}`).textContent = '-- KB';
+                document.getElementById(`meta-method-${id}`).textContent = '--';
+                document.getElementById(`download-${id}`).style.display = 'none';
+            }
+        }
+
+        function updatePreviewBlock(item) {
+            if (item.status === 'done') {
+                document.getElementById(`card-final-${item.id}`).classList.add('ready');
+                document.getElementById(`placeholder-final-${item.id}`).style.display = 'none';
+                
+                const finalImg = document.getElementById(`img-final-${item.id}`);
+                finalImg.src = item.finalUrl;
+                finalImg.style.display = 'block';
+                
+                document.getElementById(`meta-final-${item.id}`).textContent = item.finalKb + ' KB';
+                document.getElementById(`meta-method-${item.id}`).textContent = item.method;
+                
+                const dlBtn = document.getElementById(`download-${item.id}`);
+                dlBtn.href = item.finalUrl;
+                dlBtn.download = item.filename;
+                dlBtn.style.display = 'block';
+            }
+        }
+
+        function renderList() {
+            fileListEl.innerHTML = '';
+            filesData.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                
+                let displayStatus = 'PENDENTE';
+                let statusHtml = `<span class="file-status">${displayStatus}</span>`;
+                if(item.status === 'done') statusHtml = `<span class="file-status done">PRONTO</span>`;
+                if(item.status === 'processing') statusHtml = `<span class="file-status" style="background:var(--eyxo-blue);">PROCESSANDO</span>`;
+
+                div.innerHTML = `
+                    <div class="file-item-header">
+                        <span class="file-name-text" title="${item.file.name}">${item.file.name}</span>
+                        ${statusHtml}
+                    </div>
+                    <div class="file-item-controls">
+                        <span style="font-size:11px; color:var(--eyxo-text-muted); white-space:nowrap;">${item.originalSize} KB &rarr;</span>
+                        <input type="number" value="${item.targetKb}" class="mono-font" 
+                               onchange="updateTarget('${item.id}', this.value)">
+                        <span style="font-size:11px; color:var(--eyxo-text-muted);">KB alvo</span>
+                    </div>
+                `;
+                fileListEl.appendChild(div);
+            });
+            
+            if(filesData.length > 0) {
+                emptyState.style.display = 'none';
+                previewsContainer.style.display = 'flex';
+                compressAllBtn.style.display = 'flex';
+                
+                const pendingCount = filesData.filter(i => i.status === 'pending' || i.status === 'error').length;
+                const btnSpan = compressAllBtn.querySelector('span');
+                if (btnSpan) {
+                    btnSpan.textContent = pendingCount > 1 ? 'COMPRIMIR TODOS' : 'COMPRIMIR';
+                }
+            }
+            
+            checkDownloadBtn();
+            setTimeout(updateScrollIndicator, 100);
+        }
+
+        window.updateTarget = function(id, val) {
+            const item = filesData.find(i => i.id === id);
+            if(item) {
+                item.targetKb = val;
+                if(item.status === 'done' || item.status === 'error') {
+                    item.status = 'pending';
+                    resetPreviewBlock(id);
+                    renderList();
+                }
+            }
+        }
+
+        compressAllBtn.addEventListener('click', async () => {
+            const pending = filesData.filter(i => i.status === 'pending' || i.status === 'error');
+            if(pending.length === 0) return;
+            
+            compressAllBtn.disabled = true;
+            spinner.style.display = 'block';
+            
+            for(let item of pending) {
+                item.status = 'processing';
+                renderList();
+                
+                // Scroll to this item's preview block automatically
+                document.getElementById(`preview-row-${item.id}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+                const formData = new FormData();
+                formData.append('file', item.file);
+                formData.append('target_kb', item.targetKb);
+                
+                try {
+                    const res = await fetch('/compress', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if(res.ok && data.success) {
+                        item.status = 'done';
+                        item.finalKb = data.final_kb.toFixed(1);
+                        item.method = data.method;
+                        item.finalUrl = data.download_url + '?t=' + Date.now();
+                        item.filename = data.filename;
+                        updatePreviewBlock(item);
+                    } else {
+                        item.status = 'error';
+                    }
+                } catch(e) {
+                    item.status = 'error';
+                }
+                renderList();
+            }
+            
+            compressAllBtn.disabled = false;
+            spinner.style.display = 'none';
+        });
+        
+        function checkDownloadBtn() {
+            const doneItems = filesData.filter(i => i.status === 'done');
+            if(doneItems.length > 1) {
+                downloadAllBtn.style.display = 'flex';
+                downloadAllBtn.textContent = `BAIXAR ZIP (${doneItems.length})`;
+            } else {
+                downloadAllBtn.style.display = 'none';
+            }
+        }
+        
+        downloadAllBtn.addEventListener('click', async () => {
+            const doneItems = filesData.filter(i => i.status === 'done');
+            if(doneItems.length > 1) {
+                const filenames = doneItems.map(i => i.filename);
+                const res = await fetch('/download_zip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames })
+                });
+                if(res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'gifs_comprimidos.zip';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
