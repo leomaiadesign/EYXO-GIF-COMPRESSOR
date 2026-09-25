@@ -4,17 +4,33 @@ import shutil
 import uuid
 import re
 import zipfile
+import time
 from io import BytesIO
-from flask import Flask, request, send_file, render_template, jsonify
+from flask import Flask, request, send_file, render_template, jsonify, after_this_request
 from werkzeug.utils import secure_filename
 from PIL import Image
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # Limite de 50MB por arquivo
+
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+def cleanup_old_files():
+    """Remove arquivos na pasta outputs mais velhos que 1 hora."""
+    now = time.time()
+    for f in os.listdir(OUTPUT_FOLDER):
+        f_path = os.path.join(OUTPUT_FOLDER, f)
+        if os.path.isfile(f_path):
+            if os.stat(f_path).st_mtime < now - 3600:  # 1 hora
+                try: os.remove(f_path)
+                except: pass
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'gif'
 
 def extract_frames(input_path, frames_dir, keep_step):
     img = Image.open(input_path)
@@ -132,12 +148,17 @@ def index():
 
 @app.route('/compress', methods=['POST'])
 def compress_endpoint():
+    cleanup_old_files()
+
     if 'file' not in request.files:
         return jsonify({"error": "Nenhum arquivo enviado"}), 400
         
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "Nenhum arquivo selecionado"}), 400
+        
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Apenas arquivos .gif são permitidos"}), 400
         
     try:
         target_kb = float(request.form.get('target_kb', 1000))
@@ -160,8 +181,8 @@ def compress_endpoint():
         result_meta = compress_gif_logic(input_path, temp_output, target_kb)
         final_kb = result_meta["final_kb"]
         
-        # New filename format: [FINAL_KB]_clean_name.gif
-        final_name = f"{int(final_kb)}_{clean_name}"
+        # New filename format: [FINAL_KB]_[UUID]_clean_name.gif
+        final_name = f"{int(final_kb)}_{unique_id}_{clean_name}"
         final_output = os.path.join(OUTPUT_FOLDER, final_name)
         
         # Rename temp_output to final_output
@@ -185,7 +206,12 @@ def compress_endpoint():
 
 @app.route('/download/<filename>')
 def download_file(filename):
+    filename = secure_filename(filename)
     file_path = os.path.join(OUTPUT_FOLDER, filename)
+    
+    if not os.path.abspath(file_path).startswith(os.path.abspath(OUTPUT_FOLDER)):
+        return "Caminho inválido", 400
+        
     if os.path.exists(file_path):
         return send_file(file_path, as_attachment=True)
     return "File not found", 404
@@ -201,8 +227,10 @@ def download_zip():
     memory_file = BytesIO()
     with zipfile.ZipFile(memory_file, 'w') as zf:
         for fname in filenames:
+            fname = secure_filename(fname)
             file_path = os.path.join(OUTPUT_FOLDER, fname)
-            if os.path.exists(file_path):
+            
+            if os.path.abspath(file_path).startswith(os.path.abspath(OUTPUT_FOLDER)) and os.path.exists(file_path):
                 zf.write(file_path, fname)
                 
     memory_file.seek(0)
