@@ -32,54 +32,85 @@ def cleanup_old_files():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'gif'
 
-def extract_frames(input_path, frames_dir, keep_step):
+
+
+
+def extract_frames_dynamic(input_path, frames_dir, threshold):
     img = Image.open(input_path)
     frame_count = img.n_frames
     original_duration = img.info.get('duration', 100) # ms
-    new_duration = original_duration * keep_step
-    fps = 1000 / new_duration if new_duration > 0 else 10
+    fps = 1000 / original_duration if original_duration > 0 else 10
     img_width = img.width
     
     kept_frames = []
-    for i in range(0, frame_count, keep_step):
+    import numpy as np
+    
+    img.seek(0)
+    prev_frame_img = img.convert("RGBA")
+    prev_path = os.path.join(frames_dir, f"frame_{0:04d}.png")
+    prev_frame_img.save(prev_path)
+    kept_frames.append(prev_path)
+    
+    prev_arr = np.array(prev_frame_img).astype(float)
+    
+    for i in range(1, frame_count):
         img.seek(i)
-        frame_img = img.convert("RGBA")
-        frame_path = os.path.join(frames_dir, f"frame_{i:04d}.png")
-        frame_img.save(frame_path)
-        kept_frames.append(frame_path)
+        curr_frame_img = img.convert("RGBA")
+        curr_arr = np.array(curr_frame_img).astype(float)
         
-    return kept_frames, fps, img_width
+        mse = np.mean((prev_arr - curr_arr) ** 2)
+        
+        if mse < threshold:
+            kept_frames.append(kept_frames[-1])
+        else:
+            curr_path = os.path.join(frames_dir, f"frame_{i:04d}.png")
+            curr_frame_img.save(curr_path)
+            kept_frames.append(curr_path)
+            prev_arr = curr_arr
+            
+    unique_count = len(set(kept_frames))
+    return kept_frames, fps, img_width, unique_count, frame_count
 
-def run_hybrid_stage(input_path, output_path, target_bytes, frames_dir, keep_step, max_lossy, min_colors):
-    kept_frames, fps, img_width = extract_frames(input_path, frames_dir, keep_step)
+def run_hybrid_stage_dynamic(input_path, output_path, target_bytes, frames_dir, threshold, max_lossy, min_colors, quality=90):
+    kept_frames, fps, img_width, unique_count, frame_count = extract_frames_dynamic(input_path, frames_dir, threshold)
     if not kept_frames:
-        return False, float('inf'), max_lossy
+        return False, float('inf'), max_lossy, 0
         
-    gifski_out = output_path + f".step_{keep_step}.gif"
-    cmd = ["gifski", "-o", gifski_out, "--fps", str(int(fps)), "--quality", "90", "-W", str(img_width)] + kept_frames
+    unique_pct = unique_count / frame_count
+        
+    gifski_out = output_path + f".thresh_{threshold}_q{quality}.gif"
+    cmd = ["gifski", "-o", gifski_out, "--fps", str(int(fps)), "--quality", str(quality), "-W", str(img_width)] + kept_frames
     subprocess.run(cmd, check=True)
     
     temp_out = output_path + ".tmp.gif"
     
-    cmd_lossless = ["gifsicle", "-O3", f"--colors={min_colors}", gifski_out, "-o", temp_out]
+    def get_gifsicle_cmd(lossy):
+        c = ["gifsicle", "-O3", gifski_out, "-o", temp_out]
+        if min_colors < 256:
+            c.insert(2, f"--colors={min_colors}")
+        if lossy > 0:
+            c.insert(2, f"--lossy={lossy}")
+        return c
+    
+    cmd_lossless = get_gifsicle_cmd(0)
     subprocess.run(cmd_lossless, check=True)
     size_lossless = os.path.getsize(temp_out)
     if size_lossless <= target_bytes:
         shutil.copy2(temp_out, output_path)
         if os.path.exists(gifski_out): os.remove(gifski_out)
         if os.path.exists(temp_out): os.remove(temp_out)
-        return True, size_lossless, 0 
+        return True, size_lossless, 0, unique_pct 
     
-    cmd_max = ["gifsicle", "-O3", f"--lossy={max_lossy}", f"--colors={min_colors}", gifski_out, "-o", temp_out]
+    cmd_max = get_gifsicle_cmd(max_lossy)
     subprocess.run(cmd_max, check=True)
     if os.path.getsize(temp_out) > target_bytes:
         shutil.copy2(temp_out, output_path)
         size = os.path.getsize(output_path)
         if os.path.exists(gifski_out): os.remove(gifski_out)
         if os.path.exists(temp_out): os.remove(temp_out)
-        return False, size, max_lossy
+        return False, size, max_lossy, unique_pct
     
-    min_l = 10
+    min_l = 1
     max_l = max_lossy
     best_lossy = None
     best_size = float('inf')
@@ -87,7 +118,7 @@ def run_hybrid_stage(input_path, output_path, target_bytes, frames_dir, keep_ste
     
     while min_l <= max_l:
         mid_l = (min_l + max_l) // 2
-        cmd = ["gifsicle", "-O3", f"--lossy={mid_l}", f"--colors={min_colors}", gifski_out, "-o", temp_out]
+        cmd = get_gifsicle_cmd(mid_l)
         subprocess.run(cmd, check=True)
         size = os.path.getsize(temp_out)
         
@@ -104,43 +135,105 @@ def run_hybrid_stage(input_path, output_path, target_bytes, frames_dir, keep_ste
     if os.path.exists(temp_out): os.remove(temp_out)
     
     if valid_found:
-        return True, best_size, best_lossy
+        return True, best_size, best_lossy, unique_pct
     else:
-        return False, os.path.getsize(output_path), max_lossy
+        return False, os.path.getsize(output_path), max_lossy, unique_pct
 
+def generate_profiles():
+    profiles = []
+    
+    # Ultra-dense thresholds to eliminate "cliffs" in file size
+    dense_thresholds = [0, 2, 5, 10, 15, 20, 30, 40, 50, 65, 80, 100, 125, 150, 175, 200, 225, 250, 275, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2400, 3200]
+    
+    # Phase 1: Maximum Quality (Local Colormaps preserved)
+    for t in [0, 10]:
+        profiles.append({"thresh": t, "colors": 256, "max_l": 200, "quality": 100})
+        
+    # Phase 2: Standard Quality (Local Colormaps preserved)
+    for t in dense_thresholds:
+        profiles.append({"thresh": t, "colors": 256, "max_l": 200, "quality": 90})
+        
+    # Phase 3: Lower Colors (Global Colormaps forced)
+    for t in dense_thresholds[dense_thresholds.index(100):]:  # Start from 100
+        profiles.append({"thresh": t, "colors": 192, "max_l": 200, "quality": 90})
+        
+    # Phase 4: Extreme compression
+    for t in dense_thresholds[dense_thresholds.index(400):]:  # Start from 400
+        profiles.append({"thresh": t, "colors": 128, "max_l": 200, "quality": 80})
+        
+    return profiles
 
-def compress_gif_logic(input_path, output_path, target_kb, **kwargs):
+PROGRESS_DICT = {}
+
+@app.route('/progress/<task_id>')
+def get_progress(task_id):
+    return jsonify({"message": PROGRESS_DICT.get(task_id, "")})
+
+def compress_gif_logic(input_path, output_path, target_kb, task_id=None, **kwargs):
     target_bytes = target_kb * 1024
     frames_dir = output_path + "_frames_tmp"
     os.makedirs(frames_dir, exist_ok=True)
     
-    keep_steps = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30]
+    profiles = generate_profiles()
     
-    try:
-        for ks in keep_steps:
-            max_l = 80 if ks <= 2 else (100 if ks <= 4 else 120)
-            min_c = 255 if ks <= 2 else (192 if ks <= 4 else 128)
+    def set_progress(msg):
+        if task_id:
+            PROGRESS_DICT[task_id] = msg
             
-            success, size, lossy = run_hybrid_stage(input_path, output_path, target_bytes, frames_dir, ks, max_lossy=max_l, min_colors=min_c)
+    try:
+        set_progress("Iniciando Busca Binária de Perfis Otimizados...")
+        low = 0
+        high = len(profiles) - 1
+        best_profile_idx = None
+        best_result = None
+        
+        best_filepath = output_path + ".best.gif"
+        
+        while low <= high:
+            mid = (low + high) // 2
+            p = profiles[mid]
+            
+            set_progress(f"Avaliando Perfil {mid+1}/{len(profiles)} (Tolerância {p['thresh']})...")
+            
+            success, size, lossy, unique_pct = run_hybrid_stage_dynamic(
+                input_path, output_path, target_bytes, frames_dir, 
+                threshold=p["thresh"], max_lossy=p["max_l"], min_colors=p["colors"], quality=p["quality"]
+            )
             
             if success:
-                if ks == 1: name = "Original"
-                elif ks <= 2: name = "Fluidez Alta"
-                elif ks <= 4: name = "Fluidez Média"
-                elif ks <= 8: name = "Fluidez Baixa"
-                else: name = "Extremo"
+                best_profile_idx = mid
+                best_result = (size, lossy, unique_pct, p)
+                if os.path.exists(output_path):
+                    shutil.copy2(output_path, best_filepath)
+                high = mid - 1
+            else:
+                low = mid + 1
                 
-                lossy_str = f"Lossy {lossy}" if lossy > 0 else "Lossless"
-                fps_str = "FPS 100%" if ks == 1 else f"FPS 1/{ks}"
-                
-                return {"final_kb": size / 1024, "method": f"{name} ({fps_str}) + {lossy_str}"}
-                
-        return {"final_kb": os.path.getsize(output_path) / 1024, "method": f"Slideshow Extremo (FPS 1/{keep_steps[-1]})", "warning": True}
+        if best_profile_idx is not None:
+            size, lossy, unique_pct, p = best_result
+            if os.path.exists(best_filepath):
+                shutil.move(best_filepath, output_path)
+            
+            if p["quality"] == 100: name = "Qualidade Máxima"
+            elif p["colors"] == 256: name = "Qualidade Alta (Paleta Nativa)"
+            elif p["colors"] == 192: name = "Qualidade Média"
+            else: name = "Qualidade Baixa"
+            
+            lossy_str = f"Lossy {lossy}" if lossy > 0 else "Lossless"
+            fps_str = f"Únicos {int(unique_pct*100)}%"
+            
+            set_progress("Finalizado!")
+            return {"final_kb": size / 1024, "method": f"{name} ({fps_str}) + {lossy_str}"}
+            
+        set_progress("Extremo!")
+        return {"final_kb": os.path.getsize(output_path) / 1024, "method": f"Extremo (Cores 128, Únicos <5%)", "warning": True}
         
     finally:
         if os.path.exists(frames_dir):
             shutil.rmtree(frames_dir)
-
+        if os.path.exists(best_filepath):
+            try: os.remove(best_filepath)
+            except: pass
 
 @app.route('/')
 def index():
@@ -178,7 +271,8 @@ def compress_endpoint():
     original_kb = os.path.getsize(input_path) / 1024
     
     try:
-        result_meta = compress_gif_logic(input_path, temp_output, target_kb)
+        task_id = request.form.get("task_id", None)
+        result_meta = compress_gif_logic(input_path, temp_output, target_kb, task_id=task_id)
         final_kb = result_meta["final_kb"]
         
         # New filename format: [FINAL_KB]_[UUID]_clean_name.gif
